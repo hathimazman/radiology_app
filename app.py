@@ -43,15 +43,17 @@ except LookupError:
 @st.cache_resource
 def initialize_firebase():
     try:
-        # Check if the app is already initialized
         firebase_admin.get_app()
     except ValueError:
-        # Initialize the app with your credentials file
-        # You need to create a service account key from Firebase console and save it
-        cred = credentials.Certificate("radiology-app-firebase-key.json")  # Path to your credentials file
+        # Try to get credentials from environment variables first
+        if 'FIREBASE_CREDENTIALS' in os.environ:
+            import json
+            cred_dict = json.loads(os.environ.get('FIREBASE_CREDENTIALS'))
+            cred = credentials.Certificate(cred_dict)
+        else:
+            # Fall back to file if env var not available
+            cred = credentials.Certificate("radiology-app-firebase-key.json")
         firebase_admin.initialize_app(cred)
-    
-    # Return Firestore client
     return firestore.client()
 
 # Initialize the model at startup, not during refresh cycles
