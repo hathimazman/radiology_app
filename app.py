@@ -60,50 +60,34 @@ def init_connection():
 MODEL_CACHE_DIR = os.path.join(os.getcwd(), "model_cache")
 os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
 
-# Initialize the model with caching and retry logic
+# Initialize the model from local files
 @st.cache_resource
 def load_model():
-    # Define model name and maximum retries
-    model_name = 'sentence-transformers/all-MiniLM-L6-v2'
-    max_retries = 3
-    retry_delay = 2
-    
-    # Try to import sentence_transformers
     try:
         from sentence_transformers import SentenceTransformer
         
-        # Try to load the model with retries
-        for attempt in range(max_retries):
+        # Define the path to your local model files
+        local_model_path = os.path.join(os.getcwd(), "local_model")
+        
+        if os.path.exists(local_model_path):
             try:
-                # Create a message for the user on the first attempt
-                if attempt == 0:
-                    with st.spinner("Loading AI model for text comparison... This may take a moment"):
-                        # Try to load the model with a specific cache folder
-                        model = SentenceTransformer(model_name, cache_folder=MODEL_CACHE_DIR)
-                        logger.info(f"Successfully loaded model on attempt {attempt+1}")
-                        return {"model": model, "type": "transformer"}
-                else:
-                    # On retry attempts, don't show the spinner again
-                    model = SentenceTransformer(model_name, cache_folder=MODEL_CACHE_DIR)
-                    logger.info(f"Successfully loaded model on retry attempt {attempt+1}")
+                # Load from local path with a spinner
+                with st.spinner("Loading AI model for text comparison..."):
+                    model = SentenceTransformer(local_model_path)
+                    logger.info("Successfully loaded model from local path")
                     return {"model": model, "type": "transformer"}
             except Exception as e:
-                logger.warning(f"Attempt {attempt+1} failed: {e}")
-                
-                if "429" in str(e) and attempt < max_retries - 1:  # Rate limit error
-                    logger.info(f"Rate limit hit, waiting {retry_delay} seconds before retry...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                elif attempt == max_retries - 1:
-                    logger.warning(f"Failed to load model after {max_retries} attempts. Falling back to basic comparison.")
-                    return {"model": None, "type": "basic"}
-    
+                logger.warning(f"Error loading model from local path: {e}")
+                logger.info("Falling back to basic comparison method")
+                return {"model": None, "type": "basic"}
+        else:
+            logger.warning(f"Local model path does not exist: {local_model_path}")
+            logger.info("Falling back to basic comparison method")
+            return {"model": None, "type": "basic"}
+            
     except ImportError:
         logger.warning("Could not import sentence_transformers. Falling back to basic comparison.")
         return {"model": None, "type": "basic"}
-    
-    # Default fallback if all else fails
-    return {"model": None, "type": "basic"}
 
 # Load NLP Model
 model_info = load_model()
