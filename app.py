@@ -10,8 +10,10 @@ from dotenv import load_dotenv
 import time
 import logging
 
-# Load environment variables from .env file (for local development)
-load_dotenv()
+# Only load .env file for local development, not needed in Streamlit Cloud
+if not os.path.exists('.streamlit/secrets.toml'):
+    from dotenv import load_dotenv
+    load_dotenv()
 
 # Set page config - THIS MUST BE THE FIRST STREAMLIT COMMAND
 st.set_page_config(page_title="Radiology AI Learning Platform", layout="wide")
@@ -39,9 +41,9 @@ except LookupError:
 # Supabase connection
 @st.cache_resource
 def init_connection():
-    # Get Supabase credentials from environment variables
-    supabase_url = os.environ.get("SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_KEY")
+    # This works with both .env files locally and Streamlit secrets in production
+    supabase_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
     
     if not supabase_url or not supabase_key:
         st.error("Supabase credentials not found. Please set SUPABASE_URL and SUPABASE_KEY environment variables.")
