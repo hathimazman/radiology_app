@@ -41,7 +41,7 @@ except LookupError:
 # Supabase connection
 @st.cache_resource
 def init_connection():
-    # This works with both .env files locally and Streamlit secrets in production
+    # Get Supabase credentials from environment variables
     supabase_url = st.secrets.get("SUPABASE_URL")
     supabase_key = st.secrets.get("SUPABASE_KEY")
     
@@ -237,7 +237,7 @@ with tab2:
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
                     # Display image with specific width in the center column (no auto scaling)
-                    st.image(image, caption="Assess this X-ray", use_container_width=False, width=min(image.width, max_width))
+                    st.image(image, caption="Assess this X-ray", width=min(image.width, max_width))
                 
                 # Student input fields
                 student_description = st.text_area("Describe the X-ray findings:")
@@ -289,7 +289,7 @@ with tab3:
                 new_height = int(preview_img.height * ratio)
                 preview_img = preview_img.resize((max_width, new_height), Image.LANCZOS)
             
-            st.image(preview_img, caption="Image Preview", use_container_width=False)
+            st.image(preview_img, caption="Image Preview", width=max_width)
             uploaded_image.seek(0)  # Reset file pointer again after preview
         except Exception as e:
             st.error(f"Error previewing image: {e}")
