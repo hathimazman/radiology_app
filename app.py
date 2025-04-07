@@ -270,7 +270,7 @@ with tab3:
     st.header("Add a New Radiology Case")
     
     # Set a passcode for verification
-    ADMIN_PASSCODE = os.environ.get("ADMIN_PASSCODE", "rad2025")  # Get from environment variable or use default
+    ADMIN_PASSCODE = st.secrets.get("ADMIN_PASSCODE", "rad2025")  # Get from environment variable or use default
     
     uploaded_image = st.file_uploader("Upload an X-ray image", type=["jpg", "png", "jpeg"])
     
