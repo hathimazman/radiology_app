@@ -56,23 +56,54 @@ def init_connection():
         st.error(f"Supabase connection failed: {e}")
         return None
 
-# Initialize the model at startup, not during refresh cycles
+# Create a persistent cache directory for the model
+MODEL_CACHE_DIR = os.path.join(os.getcwd(), "model_cache")
+os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+
+# Initialize the model with caching and retry logic
 @st.cache_resource
 def load_model():
+    # Define model name and maximum retries
+    model_name = 'sentence-transformers/all-MiniLM-L6-v2'
+    max_retries = 3
+    retry_delay = 2
+    
+    # Try to import sentence_transformers
     try:
-        # Try to import and load the model
-        try:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-            logger.info("Successfully loaded SentenceTransformer model")
-            return {"model": model, "type": "transformer"}
-        except Exception as e:
-            logger.warning(f"Error loading SentenceTransformer model: {e}")
-            logger.info("Falling back to basic comparison method")
-            return {"model": None, "type": "basic"}
-    except Exception as e:
-        logger.error(f"Failed to initialize any model: {e}")
+        from sentence_transformers import SentenceTransformer
+        
+        # Try to load the model with retries
+        for attempt in range(max_retries):
+            try:
+                # Create a message for the user on the first attempt
+                if attempt == 0:
+                    with st.spinner("Loading AI model for text comparison... This may take a moment"):
+                        # Try to load the model with a specific cache folder
+                        model = SentenceTransformer(model_name, cache_folder=MODEL_CACHE_DIR)
+                        logger.info(f"Successfully loaded model on attempt {attempt+1}")
+                        return {"model": model, "type": "transformer"}
+                else:
+                    # On retry attempts, don't show the spinner again
+                    model = SentenceTransformer(model_name, cache_folder=MODEL_CACHE_DIR)
+                    logger.info(f"Successfully loaded model on retry attempt {attempt+1}")
+                    return {"model": model, "type": "transformer"}
+            except Exception as e:
+                logger.warning(f"Attempt {attempt+1} failed: {e}")
+                
+                if "429" in str(e) and attempt < max_retries - 1:  # Rate limit error
+                    logger.info(f"Rate limit hit, waiting {retry_delay} seconds before retry...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                elif attempt == max_retries - 1:
+                    logger.warning(f"Failed to load model after {max_retries} attempts. Falling back to basic comparison.")
+                    return {"model": None, "type": "basic"}
+    
+    except ImportError:
+        logger.warning("Could not import sentence_transformers. Falling back to basic comparison.")
         return {"model": None, "type": "basic"}
+    
+    # Default fallback if all else fails
+    return {"model": None, "type": "basic"}
 
 # Load NLP Model
 model_info = load_model()
@@ -81,7 +112,7 @@ model = model_info["model"]
 
 # Show a message if using basic comparison instead of the AI model
 if model_type == "basic":
-    st.warning("Using basic text comparison instead of AI model due to API rate limits. Refresh in a few minutes to try again.")
+    st.warning("Using basic text comparison instead of AI model. This is still effective but less precise than the AI model.")
 
 # Function to retrieve random X-ray case
 def get_random_case():
@@ -208,8 +239,9 @@ with tab2:
         st.session_state.submitted = False
     
     if st.button("Get a Random Radiological Case"):
-        st.session_state.current_case = get_random_case()
-        st.session_state.submitted = False
+        with st.spinner("Loading case..."):
+            st.session_state.current_case = get_random_case()
+            st.session_state.submitted = False
         
     if st.session_state.current_case:
         case_id, image_data, expert_description, expert_diagnosis, expert_management = st.session_state.current_case
@@ -234,7 +266,8 @@ with tab2:
                 try:
                     import base64
                     image = Image.open(io.BytesIO(base64.b64decode(image_data)))
-                except:
+                except Exception as e:
+                    logger.error(f"Error decoding base64 image: {e}")
                     st.error("Unable to decode image data")
                     image = None
             else:
@@ -264,9 +297,10 @@ with tab2:
                 if st.button("Submit Answer") or st.session_state.submitted:
                     st.session_state.submitted = True
                     
-                    desc_score, desc_feedback = evaluate_answer(student_description, expert_description, question_type='description')
-                    diag_score, diag_feedback = evaluate_answer(student_diagnosis, expert_diagnosis, question_type='diagnosis')
-                    mgmt_score, mgmt_feedback = evaluate_answer(student_management, expert_management, question_type='management')
+                    with st.spinner("Evaluating your answers..."):
+                        desc_score, desc_feedback = evaluate_answer(student_description, expert_description, question_type='description')
+                        diag_score, diag_feedback = evaluate_answer(student_diagnosis, expert_diagnosis, question_type='diagnosis')
+                        mgmt_score, mgmt_feedback = evaluate_answer(student_management, expert_management, question_type='management')
                     
                     st.write(f"**Description Score:** {desc_score:.2f} - {desc_feedback}")
                     st.write(f"**Diagnosis Score:** {diag_score:.2f} - {diag_feedback}")
@@ -278,16 +312,17 @@ with tab2:
                         st.info("**Expert Diagnosis:**\n" + expert_diagnosis)
                         st.info("**Expert Management:**\n" + expert_management)
         except Exception as e:
-            st.error(f"Error displaying image: {e}")
+            logger.error(f"Error in case display: {e}")
+            st.error(f"Error displaying case: {e}")
     else:
-        st.info("Click 'Get a Random Imaging' to start a new assessment.")
+        st.info("Click 'Get a Random Radiological Case' to start a new assessment.")
 
 # Tab 3: Add More X-ray Cases
 with tab3:
     st.header("Add a New Radiology Case")
     
     # Set a passcode for verification
-    ADMIN_PASSCODE = st.secrets.get("ADMIN_PASSCODE")  # Get from environment variable or use default
+    ADMIN_PASSCODE = st.secrets.get("ADMIN_PASSCODE", "rad2025")  # Get from secrets or use default
     
     uploaded_image = st.file_uploader("Upload a radiological image", type=["jpg", "png", "jpeg"])
     
@@ -347,26 +382,35 @@ with tab3:
                 # Initialize Supabase client
                 client = init_connection()
                 if client:
-                    # Upload image to Supabase Storage
-                    import uuid
+                    # Store as base64 directly in the database
                     import base64
-                    
-                    # Option 1: Store as base64 directly in the database
                     img_base64 = base64.b64encode(img_bytes).decode('utf-8')
                     
                     # Insert record into the database
-                    response = client.table('radiology_images').insert({
-                        'radiological_image': img_base64,  # Store as base64
-                        'image_description': description,
-                        'diagnosis': diagnosis,
-                        'management': management
-                    }).execute()
-                    
-                    if hasattr(response, 'error') and response.error:
-                        st.error(f"Error saving to Supabase: {response.error}")
-                    else:
-                        st.success("Case added successfully!")
+                    with st.spinner("Saving case to database..."):
+                        try:
+                            response = client.table('radiology_images').insert({
+                                'radiological_image': img_base64,  # Store as base64
+                                'image_description': description,
+                                'diagnosis': diagnosis,
+                                'management': management
+                            }).execute()
+                            
+                            if hasattr(response, 'error') and response.error:
+                                logger.error(f"Database error: {response.error}")
+                                if "42501" in str(response.error):  # RLS policy error
+                                    st.error("Permission denied: Make sure the database RLS policies allow insertions.")
+                                else:
+                                    st.error(f"Error saving to database: {response.error}")
+                            else:
+                                st.success("Case added successfully!")
+                                # Clear form
+                                st.experimental_rerun()
+                        except Exception as e:
+                            logger.error(f"Supabase insert error: {e}")
+                            st.error(f"Error saving to database: {e}")
             except Exception as e:
+                logger.error(f"General error in save case: {e}")
                 st.error(f"Error saving case: {e}")
         else:
             st.warning("Please fill in all fields.")
