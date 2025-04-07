@@ -125,7 +125,7 @@ def get_random_case():
         return None
 
 # Function to evaluate student answer
-def evaluate_answer(student_answer, expert_answer):
+def evaluate_answer(student_answer, expert_answer, question_type):
     if not student_answer or not expert_answer:
         return 0.0, "Please provide an answer."
     
@@ -151,7 +151,24 @@ def evaluate_answer(student_answer, expert_answer):
         common_words = student_words.intersection(expert_words)
         similarity = len(common_words) / len(expert_words) if expert_words else 0
     
-    feedback = "Good job!" if similarity > 0.7 else "Consider revising."
+    if question_type == 'description':
+        if similarity < 0.7:
+            feedback = "Your description is missing key observations. Focus on describing what you see systematically, including size, location, density, and surrounding structures."
+        else:
+            feedback = "Your description covers many important findings. Remember to use standardized terminology for radiological descriptions."
+            
+    elif question_type == 'diagnosis':
+        if similarity < 0.7:
+            feedback = "Your diagnosis may not be accurate. Consider the key findings and their pattern to arrive at the correct diagnosis."
+        else:
+            feedback = "Your diagnostic reasoning is on the right track. Consider differential diagnoses when appropriate."
+            
+    elif question_type == 'management':
+        if similarity < 0.7:
+            feedback = "Your management plan needs improvement. Consider standard protocols and guidelines for this condition."
+        else:
+            feedback = "Your management plan addresses key aspects of care. Consider patient-specific factors that might modify the standard approach."
+
     if missing_keywords:
         # Limit to top 5 missing keywords to avoid overwhelming feedback
         top_missing = list(missing_keywords)[:5]
@@ -164,7 +181,7 @@ def evaluate_answer(student_answer, expert_answer):
 # Streamlit UI
 st.title("Radiology AI Learning Platform")
 
-tab1, tab2, tab3 = st.tabs(["🏠 Landing Page", "📚 Student Exercise", "➕ Add X-ray Case"])
+tab1, tab2, tab3 = st.tabs(["🏠 Landing Page", "📚 Student Exercise", "➕ Add Radiology Case"])
 
 # Tab 1: Landing Page
 with tab1:
@@ -175,10 +192,10 @@ with tab1:
     st.subheader("How to use this platform")
     st.markdown("""
     1. Go to the **Student Exercise** tab to practice your radiology skills
-    2. Click "Get a Random X-ray" to load a case
+    2. Click "Get a Random Radiological Case" to load a case
     3. Analyze the image and provide your findings
     4. Submit your answer for AI-based feedback
-    5. Faculty members can add new cases in the **Add X-ray Case** tab
+    5. Faculty members can add new cases in the **Add a New Radiology Case** tab
     """)
 
 # Tab 2: Student Exercise
@@ -190,7 +207,7 @@ with tab2:
         st.session_state.current_case = None
         st.session_state.submitted = False
     
-    if st.button("Get a Random X-ray"):
+    if st.button("Get a Random Radiological Case"):
         st.session_state.current_case = get_random_case()
         st.session_state.submitted = False
         
@@ -237,19 +254,19 @@ with tab2:
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
                     # Display image with specific width in the center column (no auto scaling)
-                    st.image(image, caption="Assess this X-ray", width=min(image.width, max_width))
+                    st.image(image, caption="Assess this radiological imaging", width=min(image.width, max_width))
                 
                 # Student input fields
-                student_description = st.text_area("Describe the X-ray findings:")
+                student_description = st.text_area("Describe the findings:")
                 student_diagnosis = st.text_input("Diagnosis:")
                 student_management = st.text_area("Management Plan:")
                 
                 if st.button("Submit Answer") or st.session_state.submitted:
                     st.session_state.submitted = True
                     
-                    desc_score, desc_feedback = evaluate_answer(student_description, expert_description)
-                    diag_score, diag_feedback = evaluate_answer(student_diagnosis, expert_diagnosis)
-                    mgmt_score, mgmt_feedback = evaluate_answer(student_management, expert_management)
+                    desc_score, desc_feedback = evaluate_answer(student_description, expert_description, question_type='description')
+                    diag_score, diag_feedback = evaluate_answer(student_diagnosis, expert_diagnosis, question_type='diagnosis')
+                    mgmt_score, mgmt_feedback = evaluate_answer(student_management, expert_management, question_type='management')
                     
                     st.write(f"**Description Score:** {desc_score:.2f} - {desc_feedback}")
                     st.write(f"**Diagnosis Score:** {diag_score:.2f} - {diag_feedback}")
@@ -263,16 +280,16 @@ with tab2:
         except Exception as e:
             st.error(f"Error displaying image: {e}")
     else:
-        st.info("Click 'Get a Random X-ray' to start a new assessment.")
+        st.info("Click 'Get a Random Imaging' to start a new assessment.")
 
 # Tab 3: Add More X-ray Cases
 with tab3:
     st.header("Add a New Radiology Case")
     
     # Set a passcode for verification
-    ADMIN_PASSCODE = st.secrets.get("ADMIN_PASSCODE", "rad2025")  # Get from environment variable or use default
+    ADMIN_PASSCODE = st.secrets.get("ADMIN_PASSCODE")  # Get from environment variable or use default
     
-    uploaded_image = st.file_uploader("Upload an X-ray image", type=["jpg", "png", "jpeg"])
+    uploaded_image = st.file_uploader("Upload a radiological image", type=["jpg", "png", "jpeg"])
     
     if uploaded_image:
         # Preview the uploaded image with resizing
