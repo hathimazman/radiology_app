@@ -3,6 +3,11 @@
 .env.*
 !.env.template
 
+# Virtual environment
+radio_app/
+radio_app_venv/
+venv/
+
 # Python
 __pycache__/
 *.py[cod]
