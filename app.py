@@ -42,8 +42,8 @@ except LookupError:
 @st.cache_resource
 def init_connection():
     # This works with both .env files locally and Streamlit secrets in production
-    supabase_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
+    supabase_url = st.secrets.get("SUPABASE_URL")
+    supabase_key = st.secrets.get("SUPABASE_KEY")
     
     if not supabase_url or not supabase_key:
         st.error("Supabase credentials not found. Please set SUPABASE_URL and SUPABASE_KEY environment variables.")
