@@ -5,15 +5,20 @@ import io
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
-from sentence_transformers import SentenceTransformer, util
 import supabase
 from dotenv import load_dotenv
+import time
+import logging
 
 # Load environment variables from .env file (for local development)
 load_dotenv()
 
 # Set page config - THIS MUST BE THE FIRST STREAMLIT COMMAND
 st.set_page_config(page_title="Radiology AI Learning Platform", layout="wide")
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Manually disable torch watchdog monitoring to prevent runtime errors
 import sys
@@ -52,10 +57,29 @@ def init_connection():
 # Initialize the model at startup, not during refresh cycles
 @st.cache_resource
 def load_model():
-    return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    try:
+        # Try to import and load the model
+        try:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+            logger.info("Successfully loaded SentenceTransformer model")
+            return {"model": model, "type": "transformer"}
+        except Exception as e:
+            logger.warning(f"Error loading SentenceTransformer model: {e}")
+            logger.info("Falling back to basic comparison method")
+            return {"model": None, "type": "basic"}
+    except Exception as e:
+        logger.error(f"Failed to initialize any model: {e}")
+        return {"model": None, "type": "basic"}
 
 # Load NLP Model
-model = load_model()
+model_info = load_model()
+model_type = model_info["type"]
+model = model_info["model"]
+
+# Show a message if using basic comparison instead of the AI model
+if model_type == "basic":
+    st.warning("Using basic text comparison instead of AI model due to API rate limits. Refresh in a few minutes to try again.")
 
 # Function to retrieve random X-ray case
 def get_random_case():
@@ -79,7 +103,7 @@ def get_random_case():
         image_url = case.get('radiological_image')
         
         # If image is stored as a URL in Supabase Storage
-        if image_url and image_url.startswith('http'):
+        if image_url and isinstance(image_url, str) and image_url.startswith('http'):
             import requests
             response = requests.get(image_url)
             image_data = response.content
@@ -107,13 +131,25 @@ def evaluate_answer(student_answer, expert_answer):
     expert_words = set(word_tokenize(expert_answer.lower())) - set(stopwords.words("english"))
     missing_keywords = expert_words - student_words
     
-    # Calculate similarity
-    similarity = util.pytorch_cos_sim(
-        model.encode(student_answer, convert_to_tensor=True),
-        model.encode(expert_answer, convert_to_tensor=True)
-    ).item()
+    # Calculate similarity based on available model
+    if model_type == "transformer":
+        try:
+            from sentence_transformers import util
+            similarity = util.pytorch_cos_sim(
+                model.encode(student_answer, convert_to_tensor=True),
+                model.encode(expert_answer, convert_to_tensor=True)
+            ).item()
+        except Exception as e:
+            logger.error(f"Error using transformer model: {e}")
+            # Fallback to basic comparison
+            common_words = student_words.intersection(expert_words)
+            similarity = len(common_words) / len(expert_words) if expert_words else 0
+    else:
+        # Basic comparison using word overlap
+        common_words = student_words.intersection(expert_words)
+        similarity = len(common_words) / len(expert_words) if expert_words else 0
     
-    feedback = "Good job!" if similarity > 0.85 else "Consider revising."
+    feedback = "Good job!" if similarity > 0.7 else "Consider revising."
     if missing_keywords:
         # Limit to top 5 missing keywords to avoid overwhelming feedback
         top_missing = list(missing_keywords)[:5]
@@ -169,6 +205,19 @@ with tab2:
             elif isinstance(image_data, bytes):
                 # If it's bytes
                 image = Image.open(io.BytesIO(image_data))
+            elif isinstance(image_data, str) and image_data.startswith('data:image'):
+                # If it's a data URI
+                import base64
+                image_data = image_data.split(',')[1]
+                image = Image.open(io.BytesIO(base64.b64decode(image_data)))
+            elif isinstance(image_data, str):
+                # Try to decode as base64
+                try:
+                    import base64
+                    image = Image.open(io.BytesIO(base64.b64decode(image_data)))
+                except:
+                    st.error("Unable to decode image data")
+                    image = None
             else:
                 # Handle other potential formats from Supabase
                 st.error("Unsupported image format")
