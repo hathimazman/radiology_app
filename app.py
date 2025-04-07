@@ -60,7 +60,6 @@ def init_connection():
 MODEL_CACHE_DIR = os.path.join(os.getcwd(), "model_cache")
 os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
 
-# Initialize the model from local files
 @st.cache_resource
 def load_model():
     try:
@@ -71,6 +70,12 @@ def load_model():
         
         if os.path.exists(local_model_path):
             try:
+                # Check if the necessary files exist
+                config_path = os.path.join(local_model_path, "config.json")
+                if not os.path.exists(config_path):
+                    logger.warning(f"Model config file not found at {config_path}")
+                    return {"model": None, "type": "basic"}
+                
                 # Load from local path with a spinner
                 with st.spinner("Loading AI model for text comparison..."):
                     model = SentenceTransformer(local_model_path)

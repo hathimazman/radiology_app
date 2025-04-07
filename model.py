@@ -1,8 +1,22 @@
+import os
 from sentence_transformers import SentenceTransformer
 
-# Download the model to a specific directory
-local_model_path = "./local_model"
-model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', cache_folder=local_model_path)
+# Set the model name and output directory
+MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'
+LOCAL_MODEL_PATH = 'local_model'
 
-# This will download all necessary files to the local_model directory
-print(f"Model downloaded to {local_model_path}")
+# Create the output directory if it doesn't exist
+os.makedirs(LOCAL_MODEL_PATH, exist_ok=True)
+
+# Download the model
+print(f"Downloading model {MODEL_NAME} to {LOCAL_MODEL_PATH}...")
+model = SentenceTransformer(MODEL_NAME, cache_folder=LOCAL_MODEL_PATH)
+
+# Save the model to the local directory
+model.save(LOCAL_MODEL_PATH)
+print(f"Model successfully downloaded and saved to {LOCAL_MODEL_PATH}")
+
+# Verify the model can be loaded back
+print("Verifying model can be loaded from local path...")
+loaded_model = SentenceTransformer(LOCAL_MODEL_PATH)
+print("Model successfully loaded from local path")
